@@ -82,49 +82,40 @@ def reshapeBookData(
     pd.DataFrame
         Long-form DataFrame ready for OFI computations.
     """
-    # Work on a copy to avoid side-effects
-    dfCopy = df.reset_index().rename(columns={'index': 'recordId'})
-
-    # Melt bids
-    bidLong = pd.wide_to_long(
-        dfCopy,
-        stubnames=['bid_px', 'bid_sz', 'bid_ct'],
-        i='recordId',
-        j='level',
-        sep='_',
-        suffix='\d+'
-    ).reset_index()
-    bidLong['side'] = 'bid'
-    bidLong = bidLong.rename(
-        columns={'bid_px': 'price', 'bid_sz': 'size', 'bid_ct': 'count'}
-    )
-
-    # Melt asks
-    askLong = pd.wide_to_long(
-        dfCopy,
-        stubnames=['ask_px', 'ask_sz', 'ask_ct'],
-        i='recordId',
-        j='level',
-        sep='_',
-        suffix='\d+'
-    ).reset_index()
-    askLong['side'] = 'ask'
-    askLong = askLong.rename(
-        columns={'ask_px': 'price', 'ask_sz': 'size', 'ask_ct': 'count'}
-    )
-
-    # Combine and restore timestamp & symbol
-    longDf = pd.concat([bidLong, askLong], ignore_index=True)
-    longDf = longDf.merge(
-        dfCopy[['recordId', 'ts_event', 'symbol']],
-        on='recordId',
-        how='left'
-    )
-    # Reorder columns
-    longDf = longDf[['ts_event', 'symbol', 'side', 'level', 'price', 'size', 'count']]
-
+    records = []
+    # Iterate through each row and level to build long-form data
+    for row in df.itertuples(index=False):
+        timestamp = row.ts_event
+        symbol = row.symbol
+        for lvl in range(1, levels + 1):
+            # Bid side
+            price_b = getattr(row, f'bid_px_{lvl:02d}')
+            size_b = getattr(row, f'bid_sz_{lvl:02d}')
+            count_b = getattr(row, f'bid_ct_{lvl:02d}')
+            records.append({
+                'ts_event': timestamp,
+                'symbol': symbol,
+                'side': 'bid',
+                'level': lvl,
+                'price': price_b,
+                'size': size_b,
+                'count': count_b
+            })
+            # Ask side
+            price_a = getattr(row, f'ask_px_{lvl:02d}')
+            size_a = getattr(row, f'ask_sz_{lvl:02d}')
+            count_a = getattr(row, f'ask_ct_{lvl:02d}')
+            records.append({
+                'ts_event': timestamp,
+                'symbol': symbol,
+                'side': 'ask',
+                'level': lvl,
+                'price': price_a,
+                'size': size_a,
+                'count': count_a
+            })
+    longDf = pd.DataFrame.from_records(records)
     return longDf
-
 
 if __name__ == '__main__':
     import argparse
